@@ -1,6 +1,7 @@
 from collections import deque
 from datetime import datetime
 import os
+from re import M
 from typing import Deque, Dict, Callable, List, Optional, Union
 import pandas as pd
 import numpy as np
@@ -41,24 +42,25 @@ class Dataset:
 class TSDataPreprocessor():
     """
     Time-Series Data Preprocessor (for use with RNN)
+    THIS IS ONLY FOR BINARY CLASSIFICATION E.G.
+    target = [1, 0, 0, 0]
+    so its the first class
+
+    If preprocessed data already exists in the root data folder, it will be loaded, and preprocessing will be skipped
+    We will check if it already exists by obtaining a hash of the raw_data dataframe, and comparing it to the hash saved in
+    the name of the file. This will mean the same raw data was once passed before.
+
+    @param: custom_norm_functions : a dictionary of column names and their associated normalisation function. Any column
+    not specified uses the default normalisation function, which is percentage change, then standardisation.
+    
+    Shuffling must be done manually or passed as a param to preprocess. Saved datasets are NOT shuffled
+
+    The dataframe caption will be used in the file name when saving the dataset file. Set the dataframe caption with df.style.set_caption("my caption")
     """
-    def __init__(self):
-        """       
-        THIS IS ONLY FOR BINARY CLASSIFICATION E.G.
-        target = [1, 0, 0, 0]
-        so its the first class
 
-        If preprocessed data already exists in the root data folder, it will be loaded, and preprocessing will be skipped
-        We will check if it already exists by obtaining a hash of the raw_data dataframe, and comparing it to the hash saved in
-        the name of the file. This will mean the same raw data was once passed before.
 
-        @param: custom_norm_functions : a dictionary of column names and their associated normalisation function. Any column
-        not specified uses the default normalisation function, which is percentage change, then standardisation.
-        
-        Shuffling must be done manually or passed as a param to preprocess. Saved datasets are NOT shuffled
+    ###### STATIC METHODS ######
 
-        The dataframe caption will be used in the file name when saving the dataset file. Set the dataframe caption with df.style.set_caption("my caption")
-        """
     @staticmethod
     def deconstruct_filename(filename: str):
         filename_no_path = os.path.basename(filename)
@@ -268,12 +270,34 @@ class TSDataPreprocessor():
         df.dropna(inplace=True)
         return df
         
+    ###### OBJECT METHODS ######
         
-    def dynamic_preprocess(self, data_point: dict, col_config: ColumnConfig) -> Union[np.ndarray, None]:
+    def __init__(self, col_config: Optional[ColumnConfig] = None):
+        self.col_config = col_config
+
+        self.raw_dynamic_df = pd.DataFrame()
+        if col_config is not None:
+            columns = col_config.to_dict().keys()
+            self.raw_dynamic_df = pd.DataFrame(columns=columns)
+        
+    
+        
+    def dynamic_preprocess(self, data_point: dict, seq_len: int) -> Union[np.ndarray, None]:
+        if self.col_config is None:
+            raise Exception("You must pass col_config to DataUpdater constructor to use the dynamic_preprocess function")
+        
         # Add data_point to a raw_dataframe (create one if doesn't exist with correct ordering)
+        data_point = {x:[y] for x, y in data_point.items()}
+        self.raw_dynamic_df = pd.concat([self.raw_dynamic_df, pd.DataFrame(data_point)])
 
         # Wait until raw_df is of size (sequence length + max(largest ma_period, 1))  <-- 1 for pct chg (otherwise return None)
-        
+        col_config_dict = self.col_config.to_dict()
+        ma_periods = [x.get("period", 0) for x in col_config_dict.values()]
+        largest_ma_period = max(ma_periods)
+        if len(self.raw_dynamic_df) <= seq_len + max(largest_ma_period, 1): # 1 for NaN caused by pct_chg
+            return None # We can't make a single sequence yet
+        return np.array([])
+
         # First run: Take last x (where x is above formula) and normalise the df
         # Turn that into a sequence
 
