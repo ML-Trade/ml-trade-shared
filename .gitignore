@@ -1,3 +1,13 @@
+## Local State Folders
+/data/
+/models/
+
+## Testing files
+src/Data/DataUpdater.py
+src/utils/polygon_api.py
+src/__main__.py
+tokens.json
+
 ## Binaries / current model
 current_model.tar
 

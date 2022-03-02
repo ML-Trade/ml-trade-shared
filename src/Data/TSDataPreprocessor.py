@@ -220,33 +220,28 @@ class TSDataPreprocessor():
     @staticmethod
     def std_normalisation(df: pd.DataFrame, col_name: str, col_config: ColumnConfig) -> pd.DataFrame:
         df[col_name] = df[col_name].pct_change()
-        df.dropna(inplace=True)
+        mean = df[col_name].mean(skipna=True)
+        std = df[col_name].std(skipna=True)
         np_data = df[col_name].to_numpy()
-        mean = np.mean(np_data)
-        std = np.std(np_data)
         col_config.add_args(col_name, {"mean": mean, "std": std})
         df[col_name] = standardise(np_data, mean, std)
-        df.dropna(inplace=True)
         return df
 
     @staticmethod
     def ma_std_normalisation(df: pd.DataFrame, col_name: str, period: int, col_config: ColumnConfig) -> pd.DataFrame:
         df[col_name] = df[col_name].rolling(period, center=False).mean()
         df[col_name] = df[col_name].pct_change()
-        df.dropna(inplace=True)
+        mean = df[col_name].mean(skipna=True)
+        std = df[col_name].std(skipna=True)
         np_data = df[col_name].to_numpy()
-        mean = np.mean(np_data)
-        std = np.std(np_data)
         col_config.add_args(col_name, {"mean": mean, "std": std})
         df[col_name] = standardise(np_data, mean, std)
-        df.dropna(inplace=True)
         
         return df
 
     @staticmethod
     def minmax_normalisation(df: pd.DataFrame, col_name: str) -> pd.DataFrame:
         df[col_name] = minmax_norm(df[col_name].to_numpy())
-        df.dropna(inplace=True)
         return df
 
     @staticmethod
@@ -254,7 +249,6 @@ class TSDataPreprocessor():
         time_data = df[col_name].to_numpy()
         df = TSDataPreprocessor.add_time_data(df, time_data)
         df.drop(columns=col_name, inplace=True, errors="ignore")
-        df.dropna(inplace=True)
         return df
 
 
@@ -271,9 +265,25 @@ class TSDataPreprocessor():
                 df = TSDataPreprocessor.minmax_normalisation(df, col_name)
             if value["norm_function"] == NormFunction.TIME:
                 df = TSDataPreprocessor.time_normalisation(df, col_name)
+        df.dropna(inplace=True)
         return df
         
         
+    def dynamic_preprocess(self, data_point: dict, col_config: ColumnConfig) -> Union[np.ndarray, None]:
+        # Add data_point to a raw_dataframe (create one if doesn't exist with correct ordering)
+
+        # Wait until raw_df is of size (sequence length + max(largest ma_period, 1))  <-- 1 for pct chg (otherwise return None)
+        
+        # First run: Take last x (where x is above formula) and normalise the df
+        # Turn that into a sequence
+
+        # Any other run (if sequence exists): take (max(largest ma_period, 1) + 1 (for last point)) of the last data points and normalise
+        # Just take the last value and add that to the sequence (removing the first one)
+
+        # Return that sequence
+
+
+        pass
 
     def preprocess(self, raw_data: pd.DataFrame, *,
         col_config: ColumnConfig,
