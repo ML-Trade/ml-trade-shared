@@ -123,12 +123,9 @@ class RNN():
         self.score = {out: score[i] for i, out in enumerate(self.model.metrics_names)}
         print('Scores:', self.score)
     
-    def predict(self, dataset: Dataset):
-        predictions = self.model.predict(dataset.val_x)
-        correct = 0
-        for index, pred in enumerate(predictions):
-            if np.argmax([pred[0], pred[1]]) == np.argmax([dataset.val_y[index][0], dataset.val_y[index][1]]): correct += 1
-        print(f"Actual accuracy: {correct / len(dataset.val_y)}")
+    def predict(self, preprocessed_data_point: np.ndarray):
+        prediction = self.model.predict(np.array([preprocessed_data_point]))[0]
+        return prediction
 
     @staticmethod
     def load_model(filepath: str):
