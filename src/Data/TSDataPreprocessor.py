@@ -15,9 +15,11 @@ from Data.ColumnConfig import ColumnConfig, NormFunction
 # TODO: Make dfs passed to functions not be modified. This can be done with df.copy()
 
 ##  TODO: move this to utils
-def minmax_norm(array: Union[list, np.ndarray]) -> pd.Series:
+def minmax_norm(array: Union[list, np.ndarray], minimum: Optional[float] = None, maximum: Optional[float] = None) -> pd.Series:
+    maximum = maximum or np.max(array)
+    minimum = minimum or np.min(array)
     np_array = np.array(array)
-    return pd.Series((np_array - np.min(np_array)) / (np.max(array) - np.min(array)))
+    return pd.Series((np_array - minimum) / (maximum - minimum))
 
 def standardise(arr: np.ndarray, mean: Optional[float] = None, std: Optional[float] = None):
     mean = mean or np.mean(arr)
@@ -126,14 +128,14 @@ class TSDataPreprocessor():
         day_of_week_col = []
         week_of_year_col = []
         for val in time_col:
-            timestamp = datetime.fromtimestamp(val / 1000)
+            timestamp = datetime.fromtimestamp(val / 1000.0)
             time_of_day_col.append(timestamp.second + (timestamp.minute * 60) + (timestamp.hour * 60 * 60))
             day_of_week_col.append(timestamp.weekday())
             week_of_year_col.append(timestamp.isocalendar().week)
         
-        df["time_of_day"] = minmax_norm(time_of_day_col)
-        df["day_of_week"] = minmax_norm(day_of_week_col)
-        df["week_of_year"] = minmax_norm(week_of_year_col)
+        df["time_of_day"] = minmax_norm(time_of_day_col, minimum=0, maximum=86400)
+        df["day_of_week"] = minmax_norm(day_of_week_col, minimum=1, maximum=7)
+        df["week_of_year"] = minmax_norm(week_of_year_col, minimum=1, maximum=52)
         return df
 
     @staticmethod
@@ -222,10 +224,13 @@ class TSDataPreprocessor():
     @staticmethod
     def std_normalisation(df: pd.DataFrame, col_name: str, col_config: ColumnConfig) -> pd.DataFrame:
         df[col_name] = df[col_name].pct_change()
-        mean = df[col_name].mean(skipna=True)
-        std = df[col_name].std(skipna=True)
+
+        config_dict = col_config.to_dict()
+        mean = config_dict[col_name].get("mean", df[col_name].mean(skipna=True))
+        std = config_dict[col_name].get("std", df[col_name].mean(skipna=True))
+        if "mean" not in config_dict[col_name] or "std" not in config_dict[col_name]:
+            col_config.add_args(col_name, {"mean": mean, "std": std})
         np_data = df[col_name].to_numpy()
-        col_config.add_args(col_name, {"mean": mean, "std": std})
         df[col_name] = standardise(np_data, mean, std)
         return df
 
@@ -233,10 +238,13 @@ class TSDataPreprocessor():
     def ma_std_normalisation(df: pd.DataFrame, col_name: str, period: int, col_config: ColumnConfig) -> pd.DataFrame:
         df[col_name] = df[col_name].rolling(period, center=False).mean()
         df[col_name] = df[col_name].pct_change()
-        mean = df[col_name].mean(skipna=True)
-        std = df[col_name].std(skipna=True)
+
+        config_dict = col_config.to_dict()
+        mean = config_dict[col_name].get("mean", df[col_name].mean(skipna=True))
+        std = config_dict[col_name].get("std", df[col_name].mean(skipna=True))
+        if "mean" not in config_dict[col_name] or "std" not in config_dict[col_name]:
+            col_config.add_args(col_name, {"mean": mean, "std": std})
         np_data = df[col_name].to_numpy()
-        col_config.add_args(col_name, {"mean": mean, "std": std})
         df[col_name] = standardise(np_data, mean, std)
         
         return df
@@ -279,9 +287,9 @@ class TSDataPreprocessor():
         if col_config is not None:
             columns = col_config.to_dict().keys()
             self.raw_dynamic_df = pd.DataFrame(columns=columns)
-        
+        self.dynamic_sequence: Deque = deque()
+
     
-        
     def dynamic_preprocess(self, data_point: dict, seq_len: int) -> Union[np.ndarray, None]:
         if self.col_config is None:
             raise Exception("You must pass col_config to DataUpdater constructor to use the dynamic_preprocess function")
@@ -294,20 +302,34 @@ class TSDataPreprocessor():
         col_config_dict = self.col_config.to_dict()
         ma_periods = [x.get("period", 0) for x in col_config_dict.values()]
         largest_ma_period = max(ma_periods)
-        if len(self.raw_dynamic_df) <= seq_len + max(largest_ma_period, 1): # 1 for NaN caused by pct_chg
+        min_required_rows = seq_len + max(largest_ma_period, 1) # Min Required rows to get seq_len rows after normalisation
+        if len(self.raw_dynamic_df) <= min_required_rows: # 1 for NaN caused by pct_chg
             return None # We can't make a single sequence yet
-        return np.array([])
 
         # First run: Take last x (where x is above formula) and normalise the df
         # Turn that into a sequence
+        is_first_run = self.dynamic_sequence.maxlen is None and len(self.dynamic_sequence) == 0
+        if is_first_run:
+            self.dynamic_sequence = deque(maxlen=seq_len)
+            last_rows = self.raw_dynamic_df.tail(min_required_rows).copy()
+            normalised_df = self.normalisation(last_rows, self.col_config)
+            numpy_df = normalised_df.to_numpy()
+            for index, value in enumerate(numpy_df):
+                self.dynamic_sequence.append(value)
 
         # Any other run (if sequence exists): take (max(largest ma_period, 1) + 1 (for last point)) of the last data points and normalise
         # Just take the last value and add that to the sequence (removing the first one)
-
+        else:
+            min_rows = max(largest_ma_period, 1) + 1
+            last_rows = self.raw_dynamic_df.tail(min_rows).copy()
+            x = len(last_rows)
+            normalised_df = self.normalisation(last_rows, self.col_config)
+            last_row = normalised_df.iloc[-1].to_numpy()
+            self.dynamic_sequence.append(last_row)
+ 
         # Return that sequence
+        return np.array(self.dynamic_sequence)
 
-
-        pass
 
     def preprocess(self, raw_data: pd.DataFrame, *,
         col_config: ColumnConfig,
