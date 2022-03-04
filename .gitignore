@@ -3,9 +3,9 @@
 /models/
 
 ## Testing files
-ml-trade-shared/Data/DataUpdater.py
-ml-trade-shared/utils/polygon_api.py
-ml-trade-shared/__main__.py
+mltradeshared/Data/DataUpdater.py
+mltradeshared/utils/polygon_api.py
+mltradeshared/__main__.py
 tokens.json
 
 ## Binaries / current model

@@ -4,7 +4,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name='ml-trade-shared',
+    name='mltradeshared',
     version='0.0.1',
     author='Kyle Doidge',
     author_email='kyle.blue.nuttall@gmail.com',
@@ -16,7 +16,7 @@ setuptools.setup(
         "Bug Tracker": "https://github.com/ML-Trade/ml-trade-shared/issues"
     },
     license='proprietary and confidential',
-    packages=['ml-trade-shared'],
+    packages=['mltradeshared'],
     install_requires=[
         "tensorflow>=2.7.0",
         "tensorboard>=2.7.0",
