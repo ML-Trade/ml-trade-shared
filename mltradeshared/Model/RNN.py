@@ -127,7 +127,7 @@ class RNN():
         return prediction
 
     @staticmethod
-    def load_model(filepath: str):
+    def load_model(filepath: str, *, return_col_config = False):
         """
         The file passed is a tarball. It contains the metadata as well as the model / weights files.
         This function extracts the tarball into the temp directory defined by tempfile.gettempdir()
@@ -156,7 +156,12 @@ class RNN():
             )
             model.model = keras.models.load_model(model_path)
         print(f"Successfully loaded from {filepath}")
-        return model
+
+        if return_col_config == True:
+            col_config = ColumnConfig.from_json(json.dumps(metadata["col_config"]))
+            return (model, col_config)
+        else:
+            return model
 
 
     def save_model(self, col_config: ColumnConfig) -> str:
