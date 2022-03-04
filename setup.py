@@ -16,7 +16,7 @@ setuptools.setup(
         "Bug Tracker": "https://github.com/ML-Trade/ml-trade-shared/issues"
     },
     license='proprietary and confidential',
-    packages=['mltradeshared'],
+    packages=setuptools.find_packages(),
     install_requires=[
         "tensorflow>=2.7.0",
         "tensorboard>=2.7.0",
