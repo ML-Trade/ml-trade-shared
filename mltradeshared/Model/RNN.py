@@ -5,11 +5,10 @@ from msilib.schema import Error
 from platform import architecture
 from typing import Dict, List, Tuple, Union
 
-from Data.ColumnConfig import ColumnConfig
+from mltradeshared import ColumnConfig, Dataset
 from enum import Enum
 from keras.layers import LSTM, GRU, Dense, Input, Bidirectional, Dropout, BatchNormalization
 from keras.callbacks import TensorBoard, EarlyStopping
-from Data.TSDataPreprocessor import Dataset
 import keras
 import numpy as np
 import os

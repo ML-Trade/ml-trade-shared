@@ -5,7 +5,7 @@
 ## Testing files
 mltradeshared/Data/DataUpdater.py
 mltradeshared/utils/polygon_api.py
-mltradeshared/__main__.py
+__main__.py
 tokens.json
 
 ## Binaries / current model

@@ -9,7 +9,7 @@ import hashlib
 import glob
 from dataclasses import dataclass
 
-from Data.ColumnConfig import ColumnConfig, NormFunction
+from .ColumnConfig import ColumnConfig, NormFunction
 
 
 # TODO: Make dfs passed to functions not be modified. This can be done with df.copy()
