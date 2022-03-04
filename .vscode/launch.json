@@ -8,7 +8,7 @@
             "name": "Python: __main__",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/src/__main__.py",
+            "program": "${workspaceFolder}/ml-trade-shared/__main__.py",
             "console": "internalConsole",
             "python": "${command:python.interpreterPath}",
         }
