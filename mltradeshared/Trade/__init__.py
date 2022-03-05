@@ -1,1 +1,1 @@
-from .TradeManager import Trade, TradeManager, Forecast
+from .TradeManager import Trade, TradeManager, TimeMeasurement

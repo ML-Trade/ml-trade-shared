@@ -18,15 +18,16 @@ class Trade():
     close_price: Optional[float] = None
 
 @dataclass
-class Forecast():
+class TimeMeasurement():
     measurement: str
     multiplier: int
 
 class TradeManager():
-    def __init__(self, balance: float, forecast_period: Forecast, risk_per_trade: float, max_open_risk: float, std_dif: float, min_stds_to_trade: float, max_trade_history: Union[int, None] = 500) -> None:
+    def __init__(self, balance: float, forecast_period: TimeMeasurement, trade_cooldown: TimeMeasurement, risk_per_trade: float, max_open_risk: float, std_dif: float, min_stds_to_trade: float, max_trade_history: Union[int, None] = 500) -> None:
         """
         std_dif: The std deviation for the difference between the predictions
         min_stds_to_trade: Minimum number of standard deviations the difference between class predictions should be before a trade is executed
+        trade_cooldown: How long we should wait before trading again immediately after a trade
         """
         if risk_per_trade > max_open_risk:
             raise Exception("risk_per_trade MUST be lower than max_open_risk... Otherwise you can't open a single trade!")
@@ -40,20 +41,23 @@ class TradeManager():
         self.closed_trades: Deque[Trade] = deque(maxlen=max_trade_history)
         self.balance_history: Deque[float] = deque(maxlen=max_trade_history)
         self.balance_history.append(balance)
+        self.trade_cooldown = get_time_delta(trade_cooldown.multiplier, trade_cooldown.measurement)
+        self.last_trade_time = datetime.min
 
     def make_trade(self, prediction: np.ndarray, current_candle: dict, callback: Callable[[Trade], Any]):
         """
         The callback should call the api, and assign the ticket_id for the trade
         """
         is_buy = prediction[0] > prediction[1]
-        open_time = current_candle["t"]
+        open_time = datetime.fromtimestamp(current_candle["t"] / 1000)
         # TODO: Get ACTUAL open price from api (we wont otherwise account for slippage or spreads etc...)
         open_price = current_candle["c"]
         # TODO: Get ACTUAL pip size from api. Have ATR as a parameter and use 1 ATR for stop, 2 for target (or something like that)
         # lot_size = self.calculate_lot_size(open_price, stop_loss, pip_size)
         lot_size = 0.1
-        trade = Trade(is_buy, lot_size, datetime.fromtimestamp(open_time / 1000), open_price)
+        trade = Trade(is_buy, lot_size, open_time, open_price)
 
+        self.last_trade_time = open_time
         self.open_trades.append(trade)
         callback(self.open_trades[-1])
 
@@ -93,14 +97,21 @@ class TradeManager():
         closed_trades_callback(recently_closed_trades)        
         
 
-    def should_make_trade(self, prediction: np.ndarray) -> bool:
+    def should_make_trade(self, prediction: np.ndarray, current_candle: dict) -> bool:
         max_open_trades = math.floor(self.max_open_risk / self.risk_per_trade)
         if len(self.open_trades) >= max_open_trades:
             return False
+
         dif = abs(prediction[0] - prediction[1])
         min_dif_to_trade = self.min_stds_to_trade * self.std_dif
         if dif < min_dif_to_trade:
             return False
+
+        current_time = datetime.fromtimestamp(current_candle["t"] / 1000)
+        next_allowed_trade_time = self.last_trade_time + self.trade_cooldown
+        if current_time < next_allowed_trade_time:
+            return False
+            
         return True
         
     def set_balance(self, balance: float):
