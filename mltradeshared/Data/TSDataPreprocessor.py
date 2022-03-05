@@ -12,8 +12,6 @@ from dataclasses import dataclass
 from .ColumnConfig import ColumnConfig, NormFunction
 
 
-# TODO: Make dfs passed to functions not be modified. This can be done with df.copy()
-
 ##  TODO: move this to utils
 def minmax_norm(array: Union[list, np.ndarray], minimum: Optional[float] = None, maximum: Optional[float] = None) -> pd.Series:
     maximum = maximum or np.max(array)
@@ -349,7 +347,6 @@ class TSDataPreprocessor():
 
         All else is standardised
         """
-        ## TODO: Reorder col_config to be in same order as raw_data
         ## TODO: col_config documentation
 
         #TODO: THIS DOESN'T CURRENTLY WORK. MEANS AND STD AREN'T ADDED TO COL_CONFIG AMONG OTHER THINGS

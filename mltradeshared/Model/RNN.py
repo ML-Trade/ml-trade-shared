@@ -56,7 +56,6 @@ class RNN():
         :param layers: A list of integers. Each integer represents the number of neurons in a layer
         """
         super().__init__()
-        # TODO: Test if this is actually needed in newer versions of Tensorflow
         self.Architecture = architecture
         self.is_bidirectional = is_bidirectional
         self.dropout = dropout
