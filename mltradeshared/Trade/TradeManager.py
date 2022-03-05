@@ -28,7 +28,7 @@ class TradeManager():
         std_dif: The std deviation for the difference between the predictions
         min_stds_to_trade: Minimum number of standard deviations the difference between class predictions should be before a trade is executed
         """
-        if risk_per_trade < max_open_risk:
+        if risk_per_trade > max_open_risk:
             raise Exception("risk_per_trade MUST be lower than max_open_risk... Otherwise you can't open a single trade!")
         self.balance = balance
         self.forecast_period = forecast_period
@@ -52,7 +52,7 @@ class TradeManager():
         # TODO: Get ACTUAL pip size from api. Have ATR as a parameter and use 1 ATR for stop, 2 for target (or something like that)
         # lot_size = self.calculate_lot_size(open_price, stop_loss, pip_size)
         lot_size = 0.1
-        trade = Trade(is_buy, lot_size, open_time, open_price)
+        trade = Trade(is_buy, lot_size, datetime.fromtimestamp(open_time / 1000), open_price)
 
         self.open_trades.append(trade)
         callback(self.open_trades[-1])
@@ -67,14 +67,14 @@ class TradeManager():
         The callback is used to handle the api calls to actually close the closed trades and is required
         """
         timestamp = current_candle["t"]
-        current_time = datetime.fromtimestamp(timestamp)
+        current_time = datetime.fromtimestamp(timestamp / 1000)
         
-        forecast_time_delta = get_time_delta(self.forecast_period.multiplier, self.forecast_period.multiplier)
+        forecast_time_delta = get_time_delta(self.forecast_period.multiplier, self.forecast_period.measurement)
 
         recently_closed_trades = []
         def handle_trades(trade: Trade):
             target_time = trade.open_time + forecast_time_delta
-            if target_time >= current_time:
+            if current_time >= target_time:
                 trade.close_time = current_time
                 trade.close_price = float(current_candle["c"])
                 self.closed_trades.append(trade)
@@ -98,7 +98,8 @@ class TradeManager():
         if len(self.open_trades) >= max_open_trades:
             return False
         dif = abs(prediction[0] - prediction[1])
-        if dif < self.min_stds_to_trade:
+        min_dif_to_trade = self.min_stds_to_trade * self.std_dif
+        if dif < min_dif_to_trade:
             return False
         return True
         
