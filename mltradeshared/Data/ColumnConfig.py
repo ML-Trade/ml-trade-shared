@@ -68,9 +68,9 @@ class ColumnConfig:
         for col_name, value in self.config.items():
             config[col_name] = {}
             if "norm_function" not in value:
-                config[col_name] = {"norm_function": self.default_function, **self.default_function_args, **value}
+                config[col_name] = {"norm_function": self.default_function, **self.default_function_args, **(value.copy())}
             else:
-                config[col_name] = value
+                config[col_name] = value.copy()
         return config
                 
     def set_norm_function(self, name: str, norm_function: NormFunction, args: dict = {}):
