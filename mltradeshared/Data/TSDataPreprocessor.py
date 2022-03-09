@@ -10,6 +10,7 @@ import glob
 from dataclasses import dataclass
 
 from .ColumnConfig import ColumnConfig, NormFunction
+from .Dataset import Dataset, DatasetMetadata
 
 
 ##  TODO: move this to utils
@@ -32,12 +33,6 @@ class PreprocessedFileInfo:
     sequence_length: int
     forecast_period: int
 
-@dataclass
-class Dataset:
-    train_x: np.ndarray
-    train_y: np.ndarray
-    val_x: np.ndarray
-    val_y: np.ndarray
 
 class TSDataPreprocessor():
     """
@@ -126,7 +121,7 @@ class TSDataPreprocessor():
         day_of_week_col = []
         week_of_year_col = []
         for val in time_col:
-            timestamp = datetime.fromtimestamp(val / 1000.0)
+            timestamp = datetime.fromtimestamp(val)
             time_of_day_col.append(timestamp.second + (timestamp.minute * 60) + (timestamp.hour * 60 * 60))
             day_of_week_col.append(timestamp.weekday())
             week_of_year_col.append(timestamp.isocalendar().week)
@@ -331,10 +326,13 @@ class TSDataPreprocessor():
 
     def preprocess(self, raw_data: pd.DataFrame, *,
         col_config: ColumnConfig,
-        sequence_length = 100,
-        forecast_period = 10,
-        train_split = 0.8
+        dataset_metadata: DatasetMetadata
     ) -> Dataset:
+        sequence_length = dataset_metadata.sequence_length
+        if dataset_metadata.forecast_period.measurement != dataset_metadata.candle_time.measurement:
+            raise Exception(f"Difference candle time and forecast period measurements not yet supported. Candle time is in {dataset_metadata.candle_time.measurement}, forecast period is in {dataset_metadata.forecast_period.measurement}. Wanna use it? Implement it BITCH")
+        forecast_period = dataset_metadata.forecast_period.multiplier
+        train_split = dataset_metadata.train_split
         """
         Notes:
         Somewhere here you will need to save some metadata so you can preprocess new data, not just a dataset.
