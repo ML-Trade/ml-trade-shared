@@ -119,6 +119,10 @@ class RNN():
             callbacks=[early_stop],
             shuffle=True
         )
+
+        score = self.model.evaluate(dataset.val_x, dataset.val_y, verbose=0)
+        self.score = {out: score[i] for i, out in enumerate(self.model.metrics_names)}
+        print('Scores:', self.score)
         
     
     def predict(self, preprocessed_data_point: np.ndarray):
