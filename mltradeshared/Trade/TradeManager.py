@@ -5,6 +5,7 @@ import numpy as np
 import math
 from dataclasses import dataclass
 from mltradeshared.utils import get_time_delta
+from mltradeshared.Data import TimeMeasurement
 
 
 @dataclass
@@ -17,17 +18,25 @@ class Trade():
     close_time: Optional[datetime] = None
     close_price: Optional[float] = None
 
-@dataclass
-class TimeMeasurement():
-    measurement: str
-    multiplier: int
 
 class TradeManager():
-    def __init__(self, balance: float, forecast_period: TimeMeasurement, trade_cooldown: TimeMeasurement, risk_per_trade: float, max_open_risk: float, std_dif: float, min_stds_to_trade: float, max_trade_history: Union[int, None] = 500) -> None:
+    def __init__(self, *,
+        balance: float,
+        forecast_period: TimeMeasurement,
+        trade_cooldown: TimeMeasurement,
+        risk_per_trade: float,
+        max_open_risk: float,
+        dif_percentiles: List[float],
+        fraction_to_trade: float,
+        max_trade_history: Union[int, None] = 500
+    ) -> None:
         """
         std_dif: The std deviation for the difference between the predictions
         min_stds_to_trade: Minimum number of standard deviations the difference between class predictions should be before a trade is executed
         trade_cooldown: How long we should wait before trading again immediately after a trade
+        fraction_to_trade: What fraction of best trades to take. For example, if this is 0.05, take only the top 5% of trades]
+            (with highest dif between buy and sell prediction therefore highest classification confidence) 
+
         """
         if risk_per_trade > max_open_risk:
             raise Exception("risk_per_trade MUST be lower than max_open_risk... Otherwise you can't open a single trade!")
@@ -35,8 +44,8 @@ class TradeManager():
         self.forecast_period = forecast_period
         self.risk_per_trade = risk_per_trade
         self.max_open_risk = max_open_risk
-        self.min_stds_to_trade = min_stds_to_trade
-        self.std_dif = std_dif
+        self.fraction_to_trade = fraction_to_trade
+        self.dif_percentiles = dif_percentiles
         self.open_trades: List[Trade] = []
         self.closed_trades: Deque[Trade] = deque(maxlen=max_trade_history)
         self.balance_history: Deque[float] = deque(maxlen=max_trade_history)
@@ -49,7 +58,7 @@ class TradeManager():
         The callback should call the api, and assign the ticket_id for the trade
         """
         is_buy = prediction[0] > prediction[1]
-        open_time = datetime.fromtimestamp(current_candle["t"] / 1000)
+        open_time = datetime.fromtimestamp(current_candle["t"])
         # TODO: Get ACTUAL open price from api (we wont otherwise account for slippage or spreads etc...)
         open_price = current_candle["c"]
         # TODO: Get ACTUAL pip size from api. Have ATR as a parameter and use 1 ATR for stop, 2 for target (or something like that)
@@ -71,7 +80,7 @@ class TradeManager():
         The callback is used to handle the api calls to actually close the closed trades and is required
         """
         timestamp = current_candle["t"]
-        current_time = datetime.fromtimestamp(timestamp / 1000)
+        current_time = datetime.fromtimestamp(timestamp)
         
         forecast_time_delta = get_time_delta(self.forecast_period.multiplier, self.forecast_period.measurement)
 
@@ -103,11 +112,21 @@ class TradeManager():
             return False
 
         dif = abs(prediction[0] - prediction[1])
-        min_dif_to_trade = self.min_stds_to_trade * self.std_dif
+
+        index = (1 - self.fraction_to_trade) * len(self.dif_percentiles)
+        min_dif_to_trade = 0.0
+        if int(index) == index:
+            min_dif_to_trade = self.dif_percentiles[int(index)]
+        else:
+            lower_index, upper_index = math.floor(index), math.ceil(index)
+            frac = index - lower_index
+            lower, upper = self.dif_percentiles[lower_index], self.dif_percentiles[upper_index]
+            min_dif_to_trade = lower + (frac * (upper - lower)) # Interpolation bitch
+        
         if dif < min_dif_to_trade:
             return False
 
-        current_time = datetime.fromtimestamp(current_candle["t"] / 1000)
+        current_time = datetime.fromtimestamp(current_candle["t"])
         next_allowed_trade_time = self.last_trade_time + self.trade_cooldown
         if current_time < next_allowed_trade_time:
             return False
