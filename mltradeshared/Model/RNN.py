@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime
 import json
+import math
 from msilib.schema import Error
 from platform import architecture
 from typing import Dict, List, Tuple, Union
@@ -95,7 +96,7 @@ class RNN():
         )
         
         return model
-        
+            
 
     def train(self, dataset: Dataset,
         *,
@@ -116,17 +117,14 @@ class RNN():
             callbacks=[early_stop],
             shuffle=True
         )
-
-        score = self.model.evaluate(dataset.val_x, dataset.val_y, verbose=0)
-        self.score = {out: score[i] for i, out in enumerate(self.model.metrics_names)}
-        print('Scores:', self.score)
+        
     
     def predict(self, preprocessed_data_point: np.ndarray):
         prediction = self.model.predict(np.array([preprocessed_data_point]))[0]
         return prediction
 
     @staticmethod
-    def load_model(filepath: str, *, return_col_config = False):
+    def load_model(filepath: str, *, return_metadata = False):
         """
         The file passed is a tarball. It contains the metadata as well as the model / weights files.
         This function extracts the tarball into the temp directory defined by tempfile.gettempdir()
@@ -156,14 +154,35 @@ class RNN():
             model.model = keras.models.load_model(model_path)
         print(f"Successfully loaded from {filepath}")
 
-        if return_col_config == True:
-            col_config = ColumnConfig.from_json(json.dumps(metadata["col_config"]))
-            return (model, col_config)
+        if return_metadata == True:
+            return (model, metadata)
         else:
             return model
 
 
-    def save_model(self, col_config: ColumnConfig) -> str:
+
+    def get_dif_percentiles(self, predictions: np.ndarray, num_dif_percentiles: int) -> List[float]:
+        differences = []
+        num_predictions = len(predictions)
+        for prediction in predictions:
+            pred_differences = []
+            max_pred = max(prediction)
+            for pred in prediction:
+                if pred != max_pred: pred_differences.append(max_pred - pred)
+            differences.append(sum(pred_differences) / len(pred_differences))
+        # TODO: Could be useful to do percentiles for both buy and sell separately?
+        # This could potentially cause a bias to one side, since buy for example might have higher dif percentiles than sell
+        # Though this also might negatively impact accuracy?
+        differences.sort() # Ascending
+        percentiles = []
+        multiplier = 100.0 / num_dif_percentiles
+        for i in range(num_dif_percentiles):
+            pct = i * multiplier
+            if pct == 0: percentiles.append(differences[0])
+            else: percentiles.append(differences[int(math.ceil((num_predictions * pct) / 100)) - 1])
+        return percentiles
+
+    def save_model(self, col_config: ColumnConfig, dataset: Dataset, num_dif_percentiles = 200) -> str:
         """
         RETURNS the file path of the tarball saved
         
@@ -173,7 +192,6 @@ class RNN():
         and date/time. Associated files will include metadata such as number of layers,
         each later shape, other stats etc. 
         """
-
         metadata: dict = {}
         metadata["col_config"] = json.loads(col_config.to_json()) # I need a dict but in the json format
         metadata["layers"] = self.layers
@@ -182,6 +200,12 @@ class RNN():
         metadata["is_bidirectional"] = self.is_bidirectional
         metadata["x_shape"] = self.x_shape
         metadata["y_shape"] = self.y_shape
+        dif_percentiles: dict = {}
+        dif_percentiles["start"] = 0
+        dif_percentiles["end"] = 100
+        dif_percentiles["step"] = 100 / num_dif_percentiles
+        dif_percentiles["data"] = self.get_dif_percentiles(self.model.predict(dataset.val_x), num_dif_percentiles)
+        metadata["dif_percentiles"] = dif_percentiles
         metadata_json = json.dumps(metadata, indent=2)
         
         with tempfile.TemporaryDirectory() as temp_dirname:
