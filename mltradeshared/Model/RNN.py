@@ -16,6 +16,8 @@ import os
 import tarfile
 import tempfile
 
+from mltradeshared.Data.Dataset import DatasetMetadata
+
 @dataclass
 class ModelFileInfo:
     filepath: str
@@ -182,7 +184,7 @@ class RNN():
             else: percentiles.append(differences[int(math.ceil((num_predictions * pct) / 100)) - 1])
         return percentiles
 
-    def save_model(self, col_config: ColumnConfig, dataset: Dataset, num_dif_percentiles = 200) -> str:
+    def save_model(self, col_config: ColumnConfig, dataset: Dataset, dataset_metadata: DatasetMetadata, num_dif_percentiles = 200) -> str:
         """
         RETURNS the file path of the tarball saved
         
@@ -193,13 +195,14 @@ class RNN():
         each later shape, other stats etc. 
         """
         metadata: dict = {}
-        metadata["col_config"] = json.loads(col_config.to_json()) # I need a dict but in the json format
         metadata["layers"] = self.layers
         metadata["architecture"] = get_architecture_name(self.Architecture)
         metadata["dropout"] = self.dropout
         metadata["is_bidirectional"] = self.is_bidirectional
         metadata["x_shape"] = self.x_shape
         metadata["y_shape"] = self.y_shape
+        metadata["dataset_metadata"] = dataset_metadata.to_dict()
+        metadata["col_config"] = json.loads(col_config.to_json()) # I need a dict but in the json format
         dif_percentiles: dict = {}
         dif_percentiles["start"] = 0
         dif_percentiles["end"] = 100
