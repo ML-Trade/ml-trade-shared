@@ -282,6 +282,22 @@ class TSDataPreprocessor():
             self.raw_dynamic_df = pd.DataFrame(columns=columns)
         self.dynamic_sequence: Deque = deque()
 
+    def get_current_ATR(self, period: int) -> Union[float, None]:
+        """
+        Get ATR for current dynamic data (only to be used with dynamic preprocess)
+        """
+        if len(self.raw_dynamic_df) <= max(2, period):
+            return None
+        data = self.raw_dynamic_df.iloc[-period:]
+        high_low = data['h'] - data['l']
+        high_cp = np.abs(data['h'] - data['c'].shift())
+        low_cp = np.abs(data['l'] - data['c'].shift())
+
+        df = pd.concat([high_low, high_cp, low_cp], axis=1)
+        true_range = np.max(df, axis=1)
+
+        average_true_range = true_range.rolling(period).mean()
+        return average_true_range.iloc[-1]
     
     def dynamic_preprocess(self, data_point: dict, seq_len: int) -> Union[np.ndarray, None]:
         if self.col_config is None:
