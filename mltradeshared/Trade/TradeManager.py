@@ -138,7 +138,7 @@ class TradeManager():
                 dif_price = abs(trade.close_price - trade.open_price)
                 is_win = (trade.is_buy and trade.close_price > trade.open_price) or (not trade.is_buy and trade.close_price < trade.open_price)
                 dif_pips = dif_price / pip_size
-                pip_value = pip_size / trade.close_price
+                pip_value = pip_size / trade.close_price * 100000
                 won_per_lot = dif_pips * pip_value
                 print(f"{'WINNER' if is_win else 'LOSER'} and we {'HIT STOP' if hit_stop else ''} + {'HIT TP' if hit_tp else ''}")
                 if not is_win: won_per_lot *= -1
@@ -185,7 +185,7 @@ class TradeManager():
 
     def calculate_lot_size(self, price: float, stop_loss: float, pip_size = 0.0001):
         # TODO: This is actually slightly innacurate, since as price fluctuates, pip_value changes
-        pip_value = pip_size / price # For 1 lot
+        pip_value = pip_size / price * 100000 # For 1 lot
         dif = abs(stop_loss - price)
         dif_pips = dif / pip_size
         dif_cost_per_lot = dif_pips * pip_value
