@@ -32,7 +32,9 @@ class TradeManager():
         fraction_to_trade: float,
         stop_loss_ATR: float,
         take_profit_ATR: float,
-        max_trade_history: Union[int, None] = 500
+        max_trade_history: Union[int, None] = 500,
+        spread = 0.25,
+        commission = 4.0,
     ) -> None:
         """
         std_dif: The std deviation for the difference between the predictions
@@ -40,11 +42,14 @@ class TradeManager():
         trade_cooldown: How long we should wait before trading again immediately after a trade
         fraction_to_trade: What fraction of best trades to take. For example, if this is 0.05, take only the top 5% of trades]
             (with highest dif between buy and sell prediction therefore highest classification confidence) 
-
+        spread: How many pips (or fractions of, 0.2 is average) should the spread be (used mainly for trading simulator)
+        commission: How many dollars does it cost to buy a Lot (100,000) if currency, round trip (TickMill charges $4)
         """
         if risk_per_trade > max_open_risk:
             raise Exception("risk_per_trade MUST be lower than max_open_risk... Otherwise you can't open a single trade!")
         self.balance = balance
+        self.spread = spread
+        self.commission = commission
         self.max_trade_time = max_trade_time
         self.risk_per_trade = risk_per_trade
         self.max_open_risk = max_open_risk
@@ -157,12 +162,17 @@ class TradeManager():
             return self.balance
         dif_price = abs(trade.close_price - trade.open_price)
         is_win = (trade.is_buy and trade.close_price > trade.open_price) or (not trade.is_buy and trade.close_price < trade.open_price)
+        
+        # Account for spread
+        if is_win: dif_price -= (self.spread * pip_size)
+        else: dif_price += (self.spread * pip_size)
+
         dif_pips = dif_price / pip_size
         pip_value = pip_size / trade.close_price * 100000
         won_per_lot = dif_pips * pip_value
         print(f"{'WINNER' if is_win else 'LOSER'} and we {'HIT STOP' if hit_stop else ''} + {'HIT TP' if hit_tp else ''}")
         if not is_win: won_per_lot *= -1
-        new_balance = self.balance + (won_per_lot * trade.lot_size)
+        new_balance = self.balance + (won_per_lot * trade.lot_size) - (trade.lot_size * self.commission)
         return new_balance
 
     def _calc_targets(self, open_price: float, is_buy: bool, ATR: float):
