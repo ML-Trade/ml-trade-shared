@@ -59,18 +59,6 @@ class TradeManager():
         self.stop_loss_ATR = stop_loss_ATR
         self.take_profit_ATR = take_profit_ATR
 
-    def _calc_targets(self, open_price: float, is_buy: bool, ATR: float):
-        stop_dif = ATR * self.stop_loss_ATR
-        tp_dif = ATR * self.take_profit_ATR
-        stop_loss, take_profit = 0.0, 0.0
-        if is_buy:
-            stop_loss = open_price - stop_dif
-            take_profit = open_price + tp_dif
-        else:
-            stop_loss = open_price + stop_dif
-            take_profit = open_price - tp_dif
-        return stop_loss, take_profit
-
     def make_trade(self, prediction: np.ndarray, current_candle: dict, callback: Callable[[Trade], Any], *, ATR: float, pip_size = 0.0001):
         """
         The callback should call the api, and assign the ticket_id for the trade
@@ -89,22 +77,6 @@ class TradeManager():
         callback(self.open_trades[-1])
 
 
-    def _check_targets(self, current_candle: dict, trade: Trade):
-        hit_stop, hit_tp = False, False
-        if trade.stop_loss is not None:
-            hit_stop = current_candle["h"] > trade.stop_loss and current_candle["l"] < trade.stop_loss
-        if trade.take_profit is not None:
-            hit_tp = current_candle["h"] > trade.take_profit and current_candle["l"] < trade.take_profit
-        if hit_stop and hit_tp: # We must guess which was hit first
-            if current_candle["o"] < current_candle["c"]:
-                if trade.is_buy: hit_tp = False
-                else: hit_stop = False
-            else:
-                if trade.is_buy: hit_stop = False
-                else: hit_tp = False
-        return hit_stop, hit_tp
-
-
     def check_open_trades(self, current_candle: dict, closed_trades_callback: Callable[[List[Trade]], Any], pip_size = 0.0001):
         """
         This should be called on every single candle. This is so that we can check whether we should
@@ -114,18 +86,15 @@ class TradeManager():
 
         The callback is used to handle the api calls to actually close the closed trades and is required
         """
-        timestamp = current_candle["t"]
-        current_time = datetime.fromtimestamp(timestamp)
-        
+        current_time = datetime.fromtimestamp(current_candle["t"])        
         max_trade_time_delta = get_time_delta(self.max_trade_time.multiplier, self.max_trade_time.measurement)
 
         recently_closed_trades = []
         def handle_trades(trade: Trade):
             target_time = trade.open_time + max_trade_time_delta
             hit_stop, hit_tp = self._check_targets(current_candle, trade)
-            if hit_stop:
-                hit_stop, hit_tp = self._check_targets(current_candle, trade)
-            if current_time >= target_time or hit_tp or hit_stop:
+            should_close_trade = current_time >= target_time or hit_tp or hit_stop
+            if should_close_trade:
                 trade.close_time = current_time
                 trade.close_price = float(current_candle["c"])
                 if hit_tp:
@@ -135,39 +104,22 @@ class TradeManager():
                 self.closed_trades.append(trade)
                 recently_closed_trades.append(trade)
 
-                dif_price = abs(trade.close_price - trade.open_price)
-                is_win = (trade.is_buy and trade.close_price > trade.open_price) or (not trade.is_buy and trade.close_price < trade.open_price)
-                dif_pips = dif_price / pip_size
-                pip_value = pip_size / trade.close_price * 100000
-                won_per_lot = dif_pips * pip_value
-                print(f"{'WINNER' if is_win else 'LOSER'} and we {'HIT STOP' if hit_stop else ''} + {'HIT TP' if hit_tp else ''}")
-                if not is_win: won_per_lot *= -1
-                self.set_balance(self.balance + (won_per_lot * trade.lot_size))
-
+                new_balance = self._calc_new_balance(trade, hit_tp, hit_stop, pip_size)
+                self.set_balance(new_balance)
                 return False
             return True
         
         self.open_trades = list(filter(handle_trades, self.open_trades))
         closed_trades_callback(recently_closed_trades)        
-        
 
+    
     def should_make_trade(self, prediction: np.ndarray, current_candle: dict) -> bool:
         max_open_trades = math.floor(self.max_open_risk / self.risk_per_trade)
         if len(self.open_trades) >= max_open_trades:
             return False
 
         dif = abs(prediction[0] - prediction[1])
-
-        index = (1 - self.fraction_to_trade) * len(self.dif_percentiles)
-        min_dif_to_trade = 0.0
-        if int(index) == index:
-            min_dif_to_trade = self.dif_percentiles[int(index)]
-        else:
-            lower_index, upper_index = math.floor(index), math.ceil(index)
-            frac = index - lower_index
-            lower, upper = self.dif_percentiles[lower_index], self.dif_percentiles[upper_index]
-            min_dif_to_trade = lower + (frac * (upper - lower)) # Interpolation bitch
-        
+        min_dif_to_trade = self._get_min_dif_to_trade()
         if dif < min_dif_to_trade:
             return False
 
@@ -184,7 +136,6 @@ class TradeManager():
         
 
     def calculate_lot_size(self, price: float, stop_loss: float, pip_size = 0.0001):
-        # TODO: This is actually slightly innacurate, since as price fluctuates, pip_value changes
         pip_value = pip_size / price * 100000 # For 1 lot
         dif = abs(stop_loss - price)
         dif_pips = dif / pip_size
@@ -193,3 +144,65 @@ class TradeManager():
 
         num_lots = target_cost / dif_cost_per_lot
         return num_lots
+
+
+
+
+
+    ############ PRIVATE FUNCTIONS ############
+
+
+    def _calc_new_balance(self, trade: Trade, hit_tp: bool, hit_stop: bool, pip_size = 0.0001):
+        if trade.close_price is None or trade.close_time is None:
+            return self.balance
+        dif_price = abs(trade.close_price - trade.open_price)
+        is_win = (trade.is_buy and trade.close_price > trade.open_price) or (not trade.is_buy and trade.close_price < trade.open_price)
+        dif_pips = dif_price / pip_size
+        pip_value = pip_size / trade.close_price * 100000
+        won_per_lot = dif_pips * pip_value
+        print(f"{'WINNER' if is_win else 'LOSER'} and we {'HIT STOP' if hit_stop else ''} + {'HIT TP' if hit_tp else ''}")
+        if not is_win: won_per_lot *= -1
+        new_balance = self.balance + (won_per_lot * trade.lot_size)
+        return new_balance
+
+    def _calc_targets(self, open_price: float, is_buy: bool, ATR: float):
+        stop_dif = ATR * self.stop_loss_ATR
+        tp_dif = ATR * self.take_profit_ATR
+        stop_loss, take_profit = 0.0, 0.0
+        if is_buy:
+            stop_loss = open_price - stop_dif
+            take_profit = open_price + tp_dif
+        else:
+            stop_loss = open_price + stop_dif
+            take_profit = open_price - tp_dif
+        return stop_loss, take_profit
+
+    def _get_min_dif_to_trade(self):
+        """
+        Get the minimum difference between the class predictions required to trade
+        using the dif percentiles provided
+        """
+        index = (1 - self.fraction_to_trade) * len(self.dif_percentiles)
+        if int(index) == index:
+            return self.dif_percentiles[int(index)]
+        else:
+            lower_index, upper_index = math.floor(index), math.ceil(index)
+            frac = index - lower_index
+            lower, upper = self.dif_percentiles[lower_index], self.dif_percentiles[upper_index]
+            return lower + (frac * (upper - lower)) # Interpolation bitch
+
+
+    def _check_targets(self, current_candle: dict, trade: Trade):
+        hit_stop, hit_tp = False, False
+        if trade.stop_loss is not None:
+            hit_stop = current_candle["h"] > trade.stop_loss and current_candle["l"] < trade.stop_loss
+        if trade.take_profit is not None:
+            hit_tp = current_candle["h"] > trade.take_profit and current_candle["l"] < trade.take_profit
+        if hit_stop and hit_tp: # We must guess which was hit first
+            if current_candle["o"] < current_candle["c"]:
+                if trade.is_buy: hit_tp = False
+                else: hit_stop = False
+            else:
+                if trade.is_buy: hit_stop = False
+                else: hit_tp = False
+        return hit_stop, hit_tp
