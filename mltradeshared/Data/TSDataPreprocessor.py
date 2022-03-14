@@ -342,7 +342,8 @@ class TSDataPreprocessor():
 
     def preprocess(self, raw_data: pd.DataFrame, *,
         col_config: ColumnConfig,
-        dataset_metadata: DatasetMetadata
+        dataset_metadata: DatasetMetadata,
+        shuffle = True
     ) -> Dataset:
         sequence_length = dataset_metadata.sequence_length
         if dataset_metadata.forecast_period.measurement != dataset_metadata.candle_time.measurement:
@@ -397,12 +398,16 @@ class TSDataPreprocessor():
 
         self.save_dataset(dataset, raw_data, df_title, sequence_length, forecast_period)
 
-        
-
         # Shuffle training set 
+        def unison_shuffled_copies(a: np.ndarray, b: np.ndarray):
+            assert len(a) == len(b)
+            p = np.random.permutation(len(a))
+            return a[p], b[p]
+        
+        if shuffle == True:
+            train_x, train_y = unison_shuffled_copies(train_x, train_y)
+            # Don't shuffle validation set...
 
-        # TODO: COME BACK TO SHUFFLE LATER
-        # random.shuffle(sequences) # Shuffle sequences to avoid order effects on learning
         print("Values after preprocessing:")
         print(df)
         return Dataset(train_x, train_y, val_x, val_y)
